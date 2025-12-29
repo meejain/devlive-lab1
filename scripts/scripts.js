@@ -11,25 +11,100 @@ import {
   loadSection,
   loadSections,
   loadCSS,
+  createOptimizedPicture,
+  fetchPlaceholders,
 } from './aem.js';
+import { enableDescription } from './utils.js';
 
 /**
  * Builds hero block and prepends to main in a new section.
  * @param {Element} main The container element
  */
-function buildHeroBlock(main) {
+async function buildHeroBlock(main) {
   const h1 = main.querySelector('h1');
+  const link = main.querySelector('a');
+  
+  if (link && link.href && link.href.includes('assets')) {
+    let imageUrl = link.href; // Default to original URL
+    
+    // Ensure placeholders are loaded before checking for AI images
+    let placeholders;
+    try {
+      placeholders = await fetchPlaceholders();
+      console.log('BuildHeroBlock - placeholders loaded:', placeholders);
+    } catch (error) {
+      console.log('BuildHeroBlock - failed to load placeholders:', error);
+      placeholders = {};
+    }
+    
+    // Check if AI image data is available and use it for hero
+    if (placeholders && placeholders.hero && placeholders.hero.length > 0) {
+      const heroImages = placeholders.hero;
+      imageUrl = heroImages[0].aemPreviewUrl; // Use the latest hero image
+      console.log('BuildHeroBlock - using AI image:', imageUrl);
+    } else {
+      console.log('BuildHeroBlock - no AI hero images available, using default:', imageUrl);
+    }
+    
+    let mainImage = createOptimizedPicture(imageUrl);
+    link.prepend(mainImage);
+  }
+  
   const picture = main.querySelector('picture');
   // eslint-disable-next-line no-bitwise
   if (h1 && picture && (h1.compareDocumentPosition(picture) & Node.DOCUMENT_POSITION_PRECEDING)) {
-    // Check if h1 or picture is already inside a hero block
-    if (h1.closest('.hero') || picture.closest('.hero')) {
-      return; // Don't create a duplicate hero block
-    }
     const section = document.createElement('div');
     section.append(buildBlock('hero', { elems: [picture, h1] }));
     main.prepend(section);
   }
+  
+  if (link) link.remove();
+}
+
+/**
+ * Decorates h1, h2 headings with repeatable scroll animations
+ * @param {Element} main The container element
+ */
+function decorateHeadings(main) {
+  const headingElements = main.querySelectorAll('h1, h2');
+
+  headingElements.forEach((heading) => {
+    // Set initial styles (starting from left, invisible)
+    heading.style.opacity = '0';
+    heading.style.transform = 'translateX(-50px)';
+
+    // Create individual observer for each heading
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          // Use Web Animations API for reliable animation (left to right)
+          entry.target.animate([
+            { opacity: 0, transform: 'translateX(-50px)' },
+            { opacity: 1, transform: 'translateX(0)' },
+          ], {
+            duration: 1500,
+            easing: 'ease',
+            fill: 'forwards',
+          });
+        } else {
+          // Fast reset animation back to left
+          entry.target.animate([
+            { opacity: 1, transform: 'translateX(0)' },
+            { opacity: 0, transform: 'translateX(-50px)' },
+          ], {
+            duration: 100,
+            easing: 'ease',
+            fill: 'forwards',
+          });
+        }
+      });
+    }, {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px',
+    });
+
+    observer.observe(heading);
+  });
 }
 
 /**
@@ -48,27 +123,9 @@ async function loadFonts() {
  * Builds all synthetic blocks in a container element.
  * @param {Element} main The container element
  */
-function buildAutoBlocks(main) {
+async function buildAutoBlocks(main) {
   try {
-    // auto block `*/fragments/*` references
-    const fragments = main.querySelectorAll('a[href*="/fragments/"]');
-    if (fragments.length > 0) {
-      // eslint-disable-next-line import/no-cycle
-      import('../blocks/fragment/fragment.js').then(({ loadFragment }) => {
-        fragments.forEach(async (fragment) => {
-          try {
-            const { pathname } = new URL(fragment.href);
-            const frag = await loadFragment(pathname);
-            fragment.parentElement.replaceWith(frag.firstElementChild);
-          } catch (error) {
-            // eslint-disable-next-line no-console
-            console.error('Fragment loading failed', error);
-          }
-        });
-      });
-    }
-
-    buildHeroBlock(main);
+    await buildHeroBlock(main);
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Auto Blocking failed', error);
@@ -80,13 +137,14 @@ function buildAutoBlocks(main) {
  * @param {Element} main The main element
  */
 // eslint-disable-next-line import/prefer-default-export
-export function decorateMain(main) {
+export async function decorateMain(main) {
   // hopefully forward compatible button decoration
   decorateButtons(main);
   decorateIcons(main);
-  buildAutoBlocks(main);
+  await buildAutoBlocks(main);
   decorateSections(main);
   decorateBlocks(main);
+  decorateHeadings(main);
 }
 
 /**
@@ -98,7 +156,7 @@ async function loadEager(doc) {
   decorateTemplateAndTheme();
   const main = doc.querySelector('main');
   if (main) {
-    decorateMain(main);
+    await decorateMain(main);
     document.body.classList.add('appear');
     await loadSection(main.querySelector('.section'), waitForFirstImage);
   }
@@ -113,20 +171,29 @@ async function loadEager(doc) {
   }
 }
 
+async function loadPlaceholders() {
+  const placeholders = await fetchPlaceholders();
+  console.log(placeholders);
+}
+
+loadPlaceholders();
+
 /**
  * Loads everything that doesn't need to be delayed.
  * @param {Element} doc The container element
  */
 async function loadLazy(doc) {
-  loadHeader(doc.querySelector('header'));
-
   const main = doc.querySelector('main');
   await loadSections(main);
+
+  // Enable description text replacement after sections are loaded
+  await enableDescription();
 
   const { hash } = window.location;
   const element = hash ? doc.getElementById(hash.substring(1)) : false;
   if (hash && element) element.scrollIntoView();
 
+  loadHeader(doc.querySelector('header'));
   loadFooter(doc.querySelector('footer'));
 
   loadCSS(`${window.hlx.codeBasePath}/styles/lazy-styles.css`);

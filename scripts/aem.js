@@ -18,22 +18,14 @@ function sampleRUM(checkpoint, data) {
     window.hlx = window.hlx || {};
     if (!window.hlx.rum || !window.hlx.rum.collector) {
       sampleRUM.enhance = () => {};
-      const params = new URLSearchParams(window.location.search);
-      const { currentScript } = document;
-      const rate = params.get('rum')
-        || window.SAMPLE_PAGEVIEWS_AT_RATE
-        || params.get('optel')
-        || (currentScript && currentScript.dataset.rate);
-      const rateValue = {
-        on: 1,
-        off: 0,
-        high: 10,
-        low: 1000,
-      }[rate];
-      const weight = rateValue !== undefined ? rateValue : 100;
+      const param = new URLSearchParams(window.location.search).get('rum');
+      const weight = (param === 'on' && 1)
+        || (window.SAMPLE_PAGEVIEWS_AT_RATE === 'high' && 10)
+        || (window.SAMPLE_PAGEVIEWS_AT_RATE === 'low' && 1000)
+        || 100;
       const id = (window.hlx.rum && window.hlx.rum.id) || crypto.randomUUID().slice(-9);
       const isSelected = (window.hlx.rum && window.hlx.rum.isSelected)
-        || (weight > 0 && Math.random() * weight < 1);
+        || (param !== 'off' && Math.random() * weight < 1);
       // eslint-disable-next-line object-curly-newline, max-len
       window.hlx.rum = {
         weight,
@@ -49,15 +41,13 @@ function sampleRUM(checkpoint, data) {
           const errData = { source: 'undefined error' };
           try {
             errData.target = error.toString();
-            if (error.stack) {
-              errData.source = error.stack
-                .split('\n')
-                .filter((line) => line.match(/https?:\/\//))
-                .shift()
-                .replace(/at ([^ ]+) \((.+)\)/, '$1@$2')
-                .replace(/ at /, '@')
-                .trim();
-            }
+            errData.source = error.stack
+              .split('\n')
+              .filter((line) => line.match(/https?:\/\//))
+              .shift()
+              .replace(/at ([^ ]+) \((.+)\)/, '$1@$2')
+              .replace(/ at /, '@')
+              .trim();
           } catch (err) {
             /* error structure was not as expected */
           }
@@ -80,17 +70,7 @@ function sampleRUM(checkpoint, data) {
           sampleRUM('error', errData);
         });
 
-        window.addEventListener('securitypolicyviolation', (e) => {
-          if (e.blockedURI.includes('helix-rum-enhancer') && e.disposition === 'enforce') {
-            const errData = {
-              source: 'csp',
-              target: e.blockedURI,
-            };
-            sampleRUM.sendPing('error', timeShift(), errData);
-          }
-        });
-
-        sampleRUM.baseURL = sampleRUM.baseURL || new URL(window.RUM_BASE || '/', new URL('https://ot.aem.live'));
+        sampleRUM.baseURL = sampleRUM.baseURL || new URL(window.RUM_BASE || '/', new URL('https://rum.hlx.page'));
         sampleRUM.collectBaseURL = sampleRUM.collectBaseURL || sampleRUM.baseURL;
         sampleRUM.sendPing = (ck, time, pingData = {}) => {
           // eslint-disable-next-line max-len, object-curly-newline
@@ -145,6 +125,76 @@ function sampleRUM(checkpoint, data) {
   } catch (error) {
     // something went awry
   }
+}
+
+/**
+ * Gets AI image generation log data as placeholders object.
+ * @returns {object} Window placeholders object containing AI image generation data
+ */
+// eslint-disable-next-line import/prefer-default-export
+async function fetchPlaceholders() {
+  window.placeholders = window.placeholders || {};
+  if (!window.placeholders.aiImageLog) {
+    window.placeholders.aiImageLog = new Promise((resolve) => {
+      fetch('/ai-image-generation-log.json')
+        .then((resp) => {
+          if (resp.ok) {
+            return resp.json();
+          }
+          return {};
+        })
+        .then((json) => {
+          const placeholders = {};
+          if (json.data && Array.isArray(json.data)) {
+            json.data.forEach((item) => {
+              // Group entries by target folder
+              if (item.TargetFolder && item.Prompt) {
+                const folderKey = toCamelCase(item.TargetFolder);
+                
+                // Initialize array for this folder if it doesn't exist
+                if (!placeholders[folderKey]) {
+                  placeholders[folderKey] = [];
+                }
+                
+                // Add the entry to the appropriate folder array
+                placeholders[folderKey].push({
+                  prompt: item.Prompt,
+                  status: item.Status,
+                  targetFolder: item.TargetFolder,
+                  edsUrl: item.EDSURL,
+                  aemPreviewUrl: item.AEMPreviewURL,
+                  timestamp: item.Timestamp,
+                  sharePointFile: item.SharePointFile,
+                  sharePointPath: item.SharePointPath,
+                  imageUrl: item.ImageURL,
+                  documentPath: item.DocumentPath,
+                  source: item.Source,
+                  userHost: item.UserHost,
+                  generatedText: item.GeneratedText,
+                });
+              }
+            });
+            
+            // Sort each folder's entries by timestamp (newest first)
+            Object.keys(placeholders).forEach((folderKey) => {
+              placeholders[folderKey].sort((a, b) => {
+                const timestampA = new Date(a.timestamp);
+                const timestampB = new Date(b.timestamp);
+                return timestampB - timestampA; // Newest first (descending order)
+              });
+            });
+          }
+          window.placeholders.aiImageLog = placeholders;
+          resolve(window.placeholders.aiImageLog);
+        })
+        .catch(() => {
+          // error loading ai image generation log
+          window.placeholders.aiImageLog = {};
+          resolve(window.placeholders.aiImageLog);
+        });
+    });
+  }
+  return window.placeholders.aiImageLog;
 }
 
 /**
@@ -498,7 +548,20 @@ function decorateSections(main) {
     wrappers.forEach((wrapper) => section.append(wrapper));
     section.classList.add('section');
     section.dataset.sectionStatus = 'initialized';
-    section.style.display = 'none';
+    
+    // Don't hide sections that are likely navigation or UI components
+    // These are typically small sections with simple content (links, text, lists)
+    const hasSimpleContent = section.querySelector('a') || 
+                            section.querySelector('p') || 
+                            section.querySelector('ul') ||
+                            section.querySelector('img');
+    const isSmallSection = section.children.length <= 3;
+    const isLikelyNavSection = hasSimpleContent && isSmallSection;
+    
+    // Only hide sections that appear to be content sections, not UI components
+    if (!isLikelyNavSection) {
+      section.style.display = 'none';
+    }
 
     // Process section metadata
     const sectionMeta = section.querySelector('div.section-metadata');
@@ -717,4 +780,5 @@ export {
   toClassName,
   waitForFirstImage,
   wrapTextNodes,
+  fetchPlaceholders,
 };
