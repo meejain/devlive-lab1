@@ -1,6 +1,13 @@
 import { createOptimizedPicture } from '../../scripts/aem.js';
+import { processImageLinks } from '../../scripts/scripts.js';
 
-export default function decorate(block) {
+export default async function decorate(block) {
+  // Process any image links (links with 'assets' in href) before building the card structure
+  await processImageLinks(block, {
+    imageType: 'cards',
+    replaceLink: true,
+  });
+
   /* change to ul, li */
   const ul = document.createElement('ul');
   [...block.children].forEach((row) => {

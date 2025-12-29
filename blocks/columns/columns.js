@@ -1,4 +1,12 @@
-export default function decorate(block) {
+import { processImageLinks } from '../../scripts/scripts.js';
+
+export default async function decorate(block) {
+  // Process any image links (links with 'assets' in href) before setting up columns
+  await processImageLinks(block, {
+    imageType: 'columns',
+    replaceLink: true,
+  });
+
   const cols = [...block.firstElementChild.children];
   block.classList.add(`columns-${cols.length}-cols`);
 

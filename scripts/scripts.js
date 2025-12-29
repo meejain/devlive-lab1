@@ -17,39 +17,91 @@ import {
 import { enableDescription } from './utils.js';
 
 /**
+ * Processes image links within a container element.
+ * Finds links with 'assets' in the href, optionally replaces them with AI-generated images,
+ * and creates optimized pictures.
+ * @param {Element} container - The container element to search for image links
+ * @param {Object} options - Configuration options
+ * @param {string} options.imageType - The type of image for AI lookup (e.g., 'hero', 'carousel', 'cards')
+ * @param {boolean} options.replaceLink - If true, replaces the link with the picture. If false, prepends picture to link.
+ * @param {string} options.selector - Optional custom selector for finding links (default: 'a[href*="assets"]')
+ * @returns {Promise<Array>} Array of created picture elements
+ */
+export async function processImageLinks(container, options = {}) {
+  const {
+    imageType = null,
+    replaceLink = true,
+    selector = 'a[href*="assets"]',
+  } = options;
+
+  const links = container.querySelectorAll(selector);
+  if (!links.length) return [];
+
+  // Fetch placeholders for AI images
+  let placeholders = {};
+  let aiImages = [];
+
+  try {
+    if (window.placeholders && window.placeholders.aiImageLog) {
+      placeholders = window.placeholders.aiImageLog;
+    } else {
+      placeholders = await fetchPlaceholders();
+    }
+
+    // Get AI images for the specified type
+    if (imageType && placeholders && placeholders[imageType]) {
+      aiImages = placeholders[imageType];
+    }
+  } catch (error) {
+    console.log('processImageLinks - failed to load placeholders:', error);
+  }
+
+  let imageIndex = 0;
+  const createdPictures = [];
+
+  links.forEach((link) => {
+    let imageUrl = link.href;
+
+    // Check if we have AI-generated images available
+    if (aiImages.length > 0 && imageIndex < aiImages.length) {
+      imageUrl = aiImages[imageIndex].aemPreviewUrl;
+      imageIndex++;
+    }
+
+    const picture = createOptimizedPicture(imageUrl);
+    createdPictures.push(picture);
+
+    if (replaceLink) {
+      // Replace the link with the picture
+      const parent = link.parentElement;
+      parent.textContent = '';
+      parent.appendChild(picture);
+    } else {
+      // Prepend picture to link (useful for hero-style blocks)
+      link.prepend(picture);
+    }
+  });
+
+  return createdPictures;
+}
+
+/**
  * Builds hero block and prepends to main in a new section.
  * @param {Element} main The container element
  */
 async function buildHeroBlock(main) {
   const h1 = main.querySelector('h1');
   const link = main.querySelector('a');
-  
+
   if (link && link.href && link.href.includes('assets')) {
-    let imageUrl = link.href; // Default to original URL
-    
-    // Ensure placeholders are loaded before checking for AI images
-    let placeholders;
-    try {
-      placeholders = await fetchPlaceholders();
-      console.log('BuildHeroBlock - placeholders loaded:', placeholders);
-    } catch (error) {
-      console.log('BuildHeroBlock - failed to load placeholders:', error);
-      placeholders = {};
-    }
-    
-    // Check if AI image data is available and use it for hero
-    if (placeholders && placeholders.hero && placeholders.hero.length > 0) {
-      const heroImages = placeholders.hero;
-      imageUrl = heroImages[0].aemPreviewUrl; // Use the latest hero image
-      console.log('BuildHeroBlock - using AI image:', imageUrl);
-    } else {
-      console.log('BuildHeroBlock - no AI hero images available, using default:', imageUrl);
-    }
-    
-    let mainImage = createOptimizedPicture(imageUrl);
-    link.prepend(mainImage);
+    // Use the global processImageLinks utility with replaceLink=false to prepend picture
+    await processImageLinks(main, {
+      imageType: 'hero',
+      replaceLink: false,
+      selector: 'a[href*="assets"]',
+    });
   }
-  
+
   const picture = main.querySelector('picture');
   // eslint-disable-next-line no-bitwise
   if (h1 && picture && (h1.compareDocumentPosition(picture) & Node.DOCUMENT_POSITION_PRECEDING)) {
@@ -57,7 +109,7 @@ async function buildHeroBlock(main) {
     section.append(buildBlock('hero', { elems: [picture, h1] }));
     main.prepend(section);
   }
-  
+
   if (link) link.remove();
 }
 
