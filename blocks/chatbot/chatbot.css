@@ -123,31 +123,33 @@
     position: relative;
     width: 44px;
     height: 44px;
-    background: transparent;
+    background: none;
+    background-color: transparent;
     border: none;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease;
     margin-right: 8px;
     border-radius: 50%;
+    padding: 0;
   }
   
   .mic-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.1);
   }
   
   .mic-icon {
-    width: 22px;
-    height: 22px;
-    color: #aaa;
-    transition: color 0.3s ease;
+    width: 24px;
+    height: 24px;
+    position: relative;
     z-index: 2;
+    pointer-events: none;
   }
   
-  .mic-btn:hover .mic-icon {
-    color: #fff;
+  .mic-btn:hover .mic-icon path {
+    fill: #ffffff;
   }
   
   /* Pulse animation ring (hidden by default) */
@@ -166,8 +168,11 @@
   }
   
   .mic-btn.listening .mic-icon {
-    color: #f44336;
     animation: micBounce 0.5s ease infinite alternate;
+  }
+  
+  .mic-btn.listening .mic-icon path {
+    fill: #f44336;
   }
   
   .mic-btn.listening .mic-pulse {
