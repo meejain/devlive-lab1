@@ -5,6 +5,63 @@ let speechTimeout = null;
 let accumulatedTranscript = '';
 const SPEECH_DELAY_MS = 3000; // Wait 3 seconds of silence before sending
 
+// DA IMS Token cache
+let cachedDAToken = null;
+
+/**
+ * Fetches and parses the da-config.txt file to get DA_IMS_TOKEN
+ * @returns {Promise<string|null>} The DA IMS token or null if not found
+ */
+async function getDATokenFromEnv() {
+  // Return cached token if available
+  if (cachedDAToken) {
+    return cachedDAToken;
+  }
+
+  try {
+    const response = await fetch('/da-config.txt');
+    if (!response.ok) {
+      console.warn('Could not fetch da-config.txt file:', response.status);
+      return null;
+    }
+
+    const envContent = await response.text();
+    
+    // Parse config file to find DA_IMS_TOKEN
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      // Skip comments and empty lines
+      if (trimmedLine.startsWith('#') || trimmedLine === '') continue;
+      
+      const [key, ...valueParts] = trimmedLine.split('=');
+      if (key.trim() === 'DA_IMS_TOKEN') {
+        cachedDAToken = valueParts.join('=').trim();
+        // Remove quotes if present
+        if ((cachedDAToken.startsWith('"') && cachedDAToken.endsWith('"')) ||
+            (cachedDAToken.startsWith("'") && cachedDAToken.endsWith("'"))) {
+          cachedDAToken = cachedDAToken.slice(1, -1);
+        }
+        console.log('✅ DA IMS Token loaded from da-config.txt');
+        return cachedDAToken;
+      }
+    }
+
+    console.warn('DA_IMS_TOKEN not found in da-config.txt file');
+    return null;
+  } catch (error) {
+    console.error('Error reading da-config.txt file:', error);
+    return null;
+  }
+}
+
+/**
+ * Clears the cached DA token (useful if token needs refresh)
+ */
+function clearDATokenCache() {
+  cachedDAToken = null;
+}
+
 function initSpeechRecognition() {
   // Check for browser support
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -390,7 +447,27 @@ async function sidebarSend(e) {
 // New function to handle dual generation (image + text)
 async function triggerDualGenerationFlow(prompt, botMessageElement) {
   // Direct webhook URL from your Power Automate HTTP trigger
-  const powerAutomateUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4a945c5c8122474aad94cc01b9413e71/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A5uwQizj2hcACdK6ACwxgQaOcFUb9t4xco3Ifyzukrk';
+  const powerAutomateUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/6adb5e389c854ed3ab1ffd03a6243ff5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=iWUv8r2CjIGlucoqXTiEXwHuE6zONcLvvnfNVU0nOGw';
+  
+  // Get DA IMS Token from .env file
+  const daImsToken = await getDATokenFromEnv();
+  
+  if (!daImsToken || daImsToken === 'your_token_here') {
+    botMessageElement.className = 'bot-msg error';
+    botMessageElement.innerHTML = `
+      <div class="error-message">
+        ⚠️ <strong>DA IMS Token Required</strong><br>
+        <span class="error-text">Please update da-config.txt with your DA IMS Token.</span><br>
+        <span class="retry-text">
+          1. Login to <a href="https://da.live" target="_blank">da.live</a><br>
+          2. Open browser console and run: <code>copy(adobeIMS.getAccessToken().token)</code><br>
+          3. Update DA_IMS_TOKEN in da-config.txt<br>
+          4. Commit and push to Git
+        </span>
+      </div>
+    `;
+    return;
+  }
   
   // Get current page path to determine target Word document
   const currentPath = window.location.pathname;
@@ -403,6 +480,8 @@ async function triggerDualGenerationFlow(prompt, botMessageElement) {
     currentPath: currentPath,
     currentHost: currentHost,
     fullUrl: window.location.href,
+    // DA IMS Token for Document Authoring API
+    daImsToken: daImsToken,
     // New flag to indicate dual generation is requested
     generateText: true,
     generateImage: true,
@@ -513,6 +592,26 @@ async function triggerPowerAutomateFlow(prompt, botMessageElement) {
   // Updated with the new trigger URL (old URL expires November 30, 2025)
   const powerAutomateUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4a945c5c8122474aad94cc01b9413e71/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A5uwQizj2hcACdK6ACwxgQaOcFUb9t4xco3Ifyzukrk';
   
+  // Get DA IMS Token from .env file
+  const daImsToken = await getDATokenFromEnv();
+  
+  if (!daImsToken || daImsToken === 'your_token_here') {
+    botMessageElement.className = 'bot-msg error';
+    botMessageElement.innerHTML = `
+      <div class="error-message">
+        ⚠️ <strong>DA IMS Token Required</strong><br>
+        <span class="error-text">Please update da-config.txt with your DA IMS Token.</span><br>
+        <span class="retry-text">
+          1. Login to <a href="https://da.live" target="_blank">da.live</a><br>
+          2. Open browser console and run: <code>copy(adobeIMS.getAccessToken().token)</code><br>
+          3. Update DA_IMS_TOKEN in da-config.txt<br>
+          4. Commit and push to Git
+        </span>
+      </div>
+    `;
+    return;
+  }
+  
   // Get current page path to determine target Word document
   const currentPath = window.location.pathname;
   const currentHost = window.location.host;
@@ -523,7 +622,9 @@ async function triggerPowerAutomateFlow(prompt, botMessageElement) {
     source: 'web-chatbot',
     currentPath: currentPath,
     currentHost: currentHost,
-    fullUrl: window.location.href
+    fullUrl: window.location.href,
+    // DA IMS Token for Document Authoring API
+    daImsToken: daImsToken
   };
   
   try {
