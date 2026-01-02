@@ -4,7 +4,8 @@ export async function enableDescription() {
     // Check if AI image data is already available, otherwise fetch it
     let placeholders;
     if (window.placeholders && window.placeholders.aiImageLog) {
-        placeholders = window.placeholders.aiImageLog;
+        // If aiImageLog exists, it might be a Promise, so await it
+        placeholders = await window.placeholders.aiImageLog;
     } else {
         placeholders = await fetchPlaceholders();
     }

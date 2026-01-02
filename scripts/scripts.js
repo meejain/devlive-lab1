@@ -43,7 +43,8 @@ export async function processImageLinks(container, options = {}) {
 
   try {
     if (window.placeholders && window.placeholders.aiImageLog) {
-      placeholders = window.placeholders.aiImageLog;
+      // If aiImageLog exists, it might be a Promise, so await it
+      placeholders = await window.placeholders.aiImageLog;
     } else {
       placeholders = await fetchPlaceholders();
     }
