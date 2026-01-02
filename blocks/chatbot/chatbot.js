@@ -7,6 +7,8 @@ const SPEECH_DELAY_MS = 3000; // Wait 3 seconds of silence before sending
 
 // DA IMS Token cache
 let cachedDAToken = null;
+// Admin Auth Token cache
+let cachedAdminToken = null;
 
 /**
  * Fetches and parses the da-config.txt file to get DA_IMS_TOKEN
@@ -56,10 +58,64 @@ async function getDATokenFromEnv() {
 }
 
 /**
+ * Fetches and parses the da-config.txt file to get ADMIN_AUTH_TOKEN
+ * @returns {Promise<string|null>} The Admin Auth token or null if not found
+ */
+async function getAdminAuthTokenFromEnv() {
+  // Return cached token if available
+  if (cachedAdminToken) {
+    return cachedAdminToken;
+  }
+
+  try {
+    const response = await fetch('/da-config.txt');
+    if (!response.ok) {
+      console.warn('Could not fetch da-config.txt file:', response.status);
+      return null;
+    }
+
+    const envContent = await response.text();
+    
+    // Parse config file to find ADMIN_AUTH_TOKEN
+    const lines = envContent.split('\n');
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      // Skip comments and empty lines
+      if (trimmedLine.startsWith('#') || trimmedLine === '') continue;
+      
+      const [key, ...valueParts] = trimmedLine.split('=');
+      if (key.trim() === 'ADMIN_AUTH_TOKEN') {
+        cachedAdminToken = valueParts.join('=').trim();
+        // Remove quotes if present
+        if ((cachedAdminToken.startsWith('"') && cachedAdminToken.endsWith('"')) ||
+            (cachedAdminToken.startsWith("'") && cachedAdminToken.endsWith("'"))) {
+          cachedAdminToken = cachedAdminToken.slice(1, -1);
+        }
+        console.log('✅ Admin Auth Token loaded from da-config.txt');
+        return cachedAdminToken;
+      }
+    }
+
+    console.warn('ADMIN_AUTH_TOKEN not found in da-config.txt file');
+    return null;
+  } catch (error) {
+    console.error('Error reading da-config.txt file:', error);
+    return null;
+  }
+}
+
+/**
  * Clears the cached DA token (useful if token needs refresh)
  */
 function clearDATokenCache() {
   cachedDAToken = null;
+}
+
+/**
+ * Clears the cached Admin Auth token (useful if token needs refresh)
+ */
+function clearAdminAuthTokenCache() {
+  cachedAdminToken = null;
 }
 
 function initSpeechRecognition() {
@@ -686,12 +742,16 @@ async function triggerJSONPreviewFlow(prompt, targetFolder, sharePointFile, botM
   // URL for the Power Automate flow for JSON Preview/Index Update
   const jsonPreviewFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/355133b004df498b8e7f4e763911d203/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=iDZSvUf5ydsLvckCSJ-4Hh1uN3sFRRcymBoRoBADS_o';
   
+  // Get Admin Auth Token from da-config.txt file
+  const adminAuthToken = await getAdminAuthTokenFromEnv();
+  
   const requestBody = {
     trigger: 'json-preview',
     originalPrompt: prompt,
     targetFolder: targetFolder,
     sharePointFile: sharePointFile,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    adminAuthToken: adminAuthToken || ''
   };
   
   try {
@@ -787,10 +847,30 @@ async function triggerIndexUpdateFlow(botMessageElement) {
   // URL for the Power Automate flow for JSON Preview/Index Update
   const jsonPreviewFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/355133b004df498b8e7f4e763911d203/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=iDZSvUf5ydsLvckCSJ-4Hh1uN3sFRRcymBoRoBADS_o';
   
+  // Get Admin Auth Token from da-config.txt file
+  const adminAuthToken = await getAdminAuthTokenFromEnv();
+  
+  if (!adminAuthToken || adminAuthToken === 'your_admin_token_here') {
+    botMessageElement.className = 'bot-msg error';
+    botMessageElement.innerHTML = `
+      <div class="error-message">
+        ⚠️ <strong>Admin Auth Token Required</strong><br>
+        <span class="error-text">Please update da-config.txt with your Admin Auth Token.</span><br>
+        <span class="retry-text">
+          1. Login to <a href="https://admin.hlx.page" target="_blank">admin.hlx.page</a><br>
+          2. Get your auth token from browser<br>
+          3. Update ADMIN_AUTH_TOKEN in da-config.txt
+        </span>
+      </div>
+    `;
+    return;
+  }
+  
   const requestBody = {
     trigger: 'manual-index-update',
     timestamp: new Date().toISOString(),
-    source: 'user-request'
+    source: 'user-request',
+    adminAuthToken: adminAuthToken
   };
   
   try {
