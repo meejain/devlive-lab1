@@ -63,13 +63,18 @@ async function initializeSheetWithSampleData() {
 
   console.log('📝 Creating sheet with', sampleData.length, 'sample rows...');
 
-  // Add empty header row
-  const headerRow = {};
-  Object.keys(sampleData[0]).forEach(key => { headerRow[key] = ''; });
-  const dataWithHeader = [headerRow, ...sampleData];
-
-  // Create FormData
-  const jsonContent = JSON.stringify({ data: dataWithHeader });
+  // Create complete sheet object with metadata (no empty header row needed)
+  const sheetObject = {
+    total: sampleData.length,
+    limit: sampleData.length,
+    offset: 0,
+    data: sampleData,  // Just the data rows, column names come from object keys
+    ':type': 'sheet',
+    ':sheetname': 'data',
+    ':colWidths': Object.keys(sampleData[0]).map(() => 50)  // Default width of 50 for each column
+  };
+  
+  const jsonContent = JSON.stringify(sheetObject);
   const blob = new Blob([jsonContent], { type: 'application/json' });
   const formData = new FormData();
   formData.append('data', blob, 'ai-image-generation-log.json');
@@ -110,7 +115,7 @@ async function testAppendRow() {
   }
   console.log('✅ Token loaded');
 
-  // Step 1: Fetch current data from DA source (JSON file)
+  // Step 1: Fetch current data from DA source (with metadata)
   console.log('\n📥 Step 1: Fetching current sheet data...');
   
   // Fetch from the .json file
@@ -118,6 +123,7 @@ async function testAppendRow() {
   console.log('   Fetching from DA source (.json file)...');
   
   let currentData = [];
+  let sheetMetadata = {};
   try {
     const resp = await fetch(sourceUrl, {
       headers: {
@@ -125,13 +131,22 @@ async function testAppendRow() {
       }
     });
     if (resp.ok) {
-      // Parse as single JSON (not double-encoded)
-      const json = await resp.json();
-      currentData = json.data || [];
+      // Parse the full sheet object with metadata
+      const sheet = await resp.json();
+      currentData = sheet.data || [];
+      
+      // Preserve metadata fields (those starting with :)
+      sheetMetadata = {
+        ':type': sheet[':type'] || 'sheet',
+        ':sheetname': sheet[':sheetname'] || 'data',
+        ':colWidths': sheet[':colWidths'] || []
+      };
+      
       console.log('   ✅ Current rows:', currentData.length);
       if (currentData.length > 0) {
         console.log('   Columns:', Object.keys(currentData[0] || {}).join(', '));
       }
+      console.log('   Metadata preserved:', Object.keys(sheetMetadata).join(', '));
     } else {
       console.log('   ⚠️  Failed to fetch:', resp.status, resp.statusText);
       console.log('   (Sheet might not exist yet, will create new)');
@@ -141,104 +156,127 @@ async function testAppendRow() {
     console.log('   (Sheet might not exist yet, will create new)');
   }
 
-  // Step 2: Analyze existing data
+  // Step 2: Clean existing data (remove empty rows including header rows)
   console.log('\n🧹 Step 2: Analyzing existing data...');
   
-  // Check if first row is header row (all empty values = header row with just column names)
-  let hasHeaderRow = currentData.length > 0 && 
-    !Object.values(currentData[0]).some(val => val && val.toString().trim() !== '');
+  // DA sheets don't need an empty "header row" - column names come from object keys
+  // Filter out ALL empty rows (including any with all empty values)
+  const cleanedData = currentData.filter(row => {
+    return Object.values(row).some(val => val && val.toString().trim() !== '');
+  });
   
-  console.log('   Has header row:', hasHeaderRow ? 'YES (will preserve)' : 'NO');
-  console.log('   Current data rows:', currentData.length);
+  const removedCount = currentData.length - cleanedData.length;
+  console.log('   Current rows:', currentData.length);
+  console.log('   Cleaned rows:', cleanedData.length);
+  if (removedCount > 0) {
+    console.log('   Removed ' + removedCount + ' empty row(s)');
+  }
   
-  // Keep the first row if it's a header, filter out any other empty rows
-  let cleanedData;
-  if (hasHeaderRow && currentData.length > 0) {
-    // Keep header row (first row) + any non-empty data rows after it
-    const headerRow = currentData[0];
-    const dataRows = currentData.slice(1).filter(row => {
-      return Object.values(row).some(val => val && val.toString().trim() !== '');
-    });
-    cleanedData = [headerRow, ...dataRows];
-    console.log('   ✅ Preserved header + ' + dataRows.length + ' data row(s)');
+  // Get column structure from first row or create default
+  let columnKeys = [];
+  if (cleanedData.length > 0) {
+    columnKeys = Object.keys(cleanedData[0]);
   } else {
-    // No header row, just filter empty rows
-    cleanedData = currentData.filter(row => {
-      return Object.values(row).some(val => val && val.toString().trim() !== '');
-    });
-    console.log('   Cleaned rows:', cleanedData.length);
+    // Default columns if sheet is empty
+    columnKeys = ['Timestamp', 'Prompt', 'Status', 'DocumentPath', 'TargetFolder', 
+                  'SharePointFile', 'SharePointPath', 'ImageURL', 'EDSURL', 
+                  'AEMPreviewURL', 'Source', 'UserHost', 'GeneratedText'];
+  }
+  
+  // Update colWidths if needed
+  if (!sheetMetadata[':colWidths'] || sheetMetadata[':colWidths'].length !== columnKeys.length) {
+    sheetMetadata[':colWidths'] = Array(columnKeys.length).fill(50);
+    console.log('   Set colWidths for', columnKeys.length, 'columns');
   }
   
   // Show existing data summary
-  if (cleanedData.length > 1) {
+  if (cleanedData.length > 0) {
     console.log('\n   📊 Existing Data Summary:');
-    cleanedData.slice(1, 4).forEach((row, idx) => {
+    cleanedData.slice(0, 3).forEach((row, idx) => {
       console.log(`      Row ${idx + 1}: ${row.Timestamp || '(empty)'} | ${row.Prompt?.substring(0, 30) || '(empty)'}...`);
     });
-    if (cleanedData.length > 4) {
-      console.log(`      ... and ${cleanedData.length - 4} more rows`);
+    if (cleanedData.length > 3) {
+      console.log(`      ... and ${cleanedData.length - 3} more rows`);
     }
-  } else if (cleanedData.length === 1) {
-    console.log('   📊 Sheet has headers only, no data rows yet');
+  } else {
+    console.log('   📊 Sheet is empty, no data rows yet');
   }
 
-  // Step 3: Create test row(s)
+  // Step 3: Create test row(s) - Testing with multiple rows
   console.log('\n📝 Step 3: Creating test row(s)...');
   
-  // Create one or more test rows
+  // Create multiple test rows to verify batch append
+  const baseTime = new Date();
   const testRows = [
     {
-      Timestamp: new Date().toISOString(),
-      Prompt: 'Test Native FormData - Append Row',
+      Timestamp: new Date(baseTime.getTime()).toISOString(),
+      Prompt: 'Test Row 1 - Mountain landscape',
       Status: 'Testing',
-      DocumentPath: '/test',
-      TargetFolder: '/test',
-      SharePointFile: 'test.png',
-      SharePointPath: '',
-      ImageURL: 'https://example.com/test.png',
-      EDSURL: 'https://main--devlive-lab1--meejain.aem.live/test',
-      AEMPreviewURL: 'https://main--devlive-lab1--meejain.aem.page/test',
-      Source: 'Native-FormData',
+      DocumentPath: '/test1',
+      TargetFolder: '/images',
+      SharePointFile: 'test1.png',
+      SharePointPath: '/images/test1.png',
+      ImageURL: 'https://example.com/test1.png',
+      EDSURL: 'https://main--devlive-lab1--meejain.aem.live/test1',
+      AEMPreviewURL: 'https://main--devlive-lab1--meejain.aem.page/test1',
+      Source: 'Batch-Test',
       UserHost: 'localhost',
-      GeneratedText: 'Test using native FormData'
+      GeneratedText: 'First test row in batch'
+    },
+    {
+      Timestamp: new Date(baseTime.getTime() + 1000).toISOString(),
+      Prompt: 'Test Row 2 - Ocean waves',
+      Status: 'Testing',
+      DocumentPath: '/test2',
+      TargetFolder: '/images',
+      SharePointFile: 'test2.png',
+      SharePointPath: '/images/test2.png',
+      ImageURL: 'https://example.com/test2.png',
+      EDSURL: 'https://main--devlive-lab1--meejain.aem.live/test2',
+      AEMPreviewURL: 'https://main--devlive-lab1--meejain.aem.page/test2',
+      Source: 'Batch-Test',
+      UserHost: 'localhost',
+      GeneratedText: 'Second test row in batch'
+    },
+    {
+      Timestamp: new Date(baseTime.getTime() + 2000).toISOString(),
+      Prompt: 'Test Row 3 - City skyline',
+      Status: 'Testing',
+      DocumentPath: '/test3',
+      TargetFolder: '/images',
+      SharePointFile: 'test3.png',
+      SharePointPath: '/images/test3.png',
+      ImageURL: 'https://example.com/test3.png',
+      EDSURL: 'https://main--devlive-lab1--meejain.aem.live/test3',
+      AEMPreviewURL: 'https://main--devlive-lab1--meejain.aem.page/test3',
+      Source: 'Batch-Test',
+      UserHost: 'localhost',
+      GeneratedText: 'Third test row in batch'
     }
-    // Uncomment to test adding multiple rows at once:
-    // ,{
-    //   Timestamp: new Date().toISOString(),
-    //   Prompt: 'Second test row',
-    //   Status: 'Testing',
-    //   DocumentPath: '/test2',
-    //   TargetFolder: '/test2',
-    //   SharePointFile: 'test2.png',
-    //   SharePointPath: '',
-    //   ImageURL: 'https://example.com/test2.png',
-    //   EDSURL: 'https://main--devlive-lab1--meejain.aem.live/test2',
-    //   AEMPreviewURL: 'https://main--devlive-lab1--meejain.aem.page/test2',
-    //   Source: 'Native-FormData',
-    //   UserHost: 'localhost',
-    //   GeneratedText: 'Second test row'
-    // }
   ];
 
   console.log('   Adding', testRows.length, 'new row(s)');
 
   // Merge with existing data - append new rows after existing data
-  // Note: If sheet has a header row, it will be preserved at position 0
   const updatedData = [...cleanedData, ...testRows];
-  console.log('   Total rows after merge:', updatedData.length);
-  
-  if (hasHeaderRow) {
-    console.log('   Structure: 1 header row + ' + (updatedData.length - 1) + ' data row(s)');
-  }
+  console.log('   Total rows after merge:', updatedData.length, 'data row(s)');
 
-  // Step 4: Create FormData with JSON file (matching browser file upload)
-  console.log('\n📤 Step 4: Creating FormData with JSON file...');
+  // Step 4: Create FormData with complete sheet object (data + metadata)
+  console.log('\n📤 Step 4: Creating FormData with sheet object...');
   
-  // Create the data structure as plain JSON (not double-encoded)
-  const dataObject = { data: updatedData };
-  const jsonContent = JSON.stringify(dataObject);
-  console.log('   JSON content preview:', jsonContent.substring(0, 150) + '...');
+  // Create complete sheet object with metadata (matching DA sheet format)
+  const sheetObject = {
+    total: updatedData.length,
+    limit: updatedData.length,
+    offset: 0,
+    data: updatedData,
+    ...sheetMetadata  // Include preserved metadata (:type, :sheetname, :colWidths)
+  };
+  
+  const jsonContent = JSON.stringify(sheetObject);
+  console.log('   Sheet object preview:', jsonContent.substring(0, 150) + '...');
   console.log('   Total rows:', updatedData.length);
+  console.log('   Includes metadata:', Object.keys(sheetMetadata).join(', '));
   
   // Create a Blob and FormData (browser-style file upload)
   const blob = new Blob([jsonContent], { type: 'application/json' });
@@ -272,12 +310,9 @@ async function testAppendRow() {
       // Summary
       console.log('\n' + '='.repeat(60));
       console.log('📊 SUMMARY:');
-      const beforeDataRows = hasHeaderRow ? currentData.length - 1 : currentData.length;
-      const afterDataRows = hasHeaderRow ? updatedData.length - 1 : updatedData.length;
-      console.log('   Before: ' + beforeDataRows + ' data row(s)' + (hasHeaderRow ? ' + 1 header row' : ''));
+      console.log('   Before: ' + cleanedData.length + ' data row(s)');
       console.log('   Added: ' + testRows.length + ' new row(s)');
-      console.log('   After: ' + afterDataRows + ' data row(s)' + (hasHeaderRow ? ' + 1 header row' : ''));
-      console.log('   Total rows in sheet: ' + updatedData.length);
+      console.log('   After: ' + updatedData.length + ' data row(s)');
       console.log('='.repeat(60));
     } else {
       console.log('\n❌ Upload failed:', response.status, response.statusText);

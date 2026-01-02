@@ -589,8 +589,7 @@ async function triggerDualGenerationFlow(prompt, botMessageElement) {
 async function triggerPowerAutomateFlow(prompt, botMessageElement) {
   // Direct webhook URL from your Power Automate HTTP trigger
   // Updated with the new trigger URL (old URL expires November 30, 2025)
-  // Using the same DA-enabled flow for all block types
-  const powerAutomateUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/6adb5e389c854ed3ab1ffd03a6243ff5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=iWUv8r2CjIGlucoqXTiEXwHuE6zONcLvvnfNVU0nOGw';
+  const powerAutomateUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4a945c5c8122474aad94cc01b9413e71/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A5uwQizj2hcACdK6ACwxgQaOcFUb9t4xco3Ifyzukrk';
   
   // Get DA IMS Token from da-config.txt file
   const daImsToken = await getDATokenFromEnv();
@@ -684,8 +683,8 @@ async function triggerPowerAutomateFlow(prompt, botMessageElement) {
 
 // Function to trigger JSON preview flow after main flow completes
 async function triggerJSONPreviewFlow(prompt, targetFolder, sharePointFile, botMessageElement) {
-  // URL for the second Power Automate flow (JSON Preview)
-  const jsonPreviewFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/7acbed8b319f4274b51d854cfe3503da/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=8pAmO_Av__wpzgLIJMFlmaOg-lKqawOflQuEI51hPjs';
+  // URL for the Power Automate flow for JSON Preview/Index Update
+  const jsonPreviewFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/355133b004df498b8e7f4e763911d203/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=iDZSvUf5ydsLvckCSJ-4Hh1uN3sFRRcymBoRoBADS_o';
   
   const requestBody = {
     trigger: 'json-preview',
@@ -785,8 +784,8 @@ function updateIndexingStatus(botMessageElement, status) {
 
 // Function to trigger index update flow directly
 async function triggerIndexUpdateFlow(botMessageElement) {
-  // URL for the second Power Automate flow (JSON Preview)
-  const jsonPreviewFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/7acbed8b319f4274b51d854cfe3503da/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=8pAmO_Av__wpzgLIJMFlmaOg-lKqawOflQuEI51hPjs';
+  // URL for the Power Automate flow for JSON Preview/Index Update
+  const jsonPreviewFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/355133b004df498b8e7f4e763911d203/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=iDZSvUf5ydsLvckCSJ-4Hh1uN3sFRRcymBoRoBADS_o';
   
   const requestBody = {
     trigger: 'manual-index-update',
