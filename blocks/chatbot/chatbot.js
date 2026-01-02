@@ -524,6 +524,25 @@ async function triggerDualGenerationFlow(prompt, botMessageElement) {
     return;
   }
   
+  // Get Admin Auth Token from da-config.txt file
+  const adminAuthToken = await getAdminAuthTokenFromEnv();
+  
+  if (!adminAuthToken || adminAuthToken === 'your_admin_token_here') {
+    botMessageElement.className = 'bot-msg error';
+    botMessageElement.innerHTML = `
+      <div class="error-message">
+        ⚠️ <strong>Admin Auth Token Required</strong><br>
+        <span class="error-text">Please update da-config.txt with your Admin Auth Token.</span><br>
+        <span class="retry-text">
+          1. Login to <a href="https://admin.hlx.page" target="_blank">admin.hlx.page</a><br>
+          2. Get your auth token from browser<br>
+          3. Update ADMIN_AUTH_TOKEN in da-config.txt
+        </span>
+      </div>
+    `;
+    return;
+  }
+  
   // Get current page path to determine target Word document
   const currentPath = window.location.pathname;
   const currentHost = window.location.host;
@@ -537,6 +556,8 @@ async function triggerDualGenerationFlow(prompt, botMessageElement) {
     fullUrl: window.location.href,
     // DA IMS Token for Document Authoring API
     daImsToken: daImsToken,
+    // Admin Auth Token for x-auth-token header
+    adminAuthToken: adminAuthToken,
     // New flag to indicate dual generation is requested
     generateText: true,
     generateImage: true,
@@ -645,7 +666,7 @@ async function triggerDualGenerationFlow(prompt, botMessageElement) {
 async function triggerPowerAutomateFlow(prompt, botMessageElement) {
   // Direct webhook URL from your Power Automate HTTP trigger
   // Updated with the new trigger URL (old URL expires November 30, 2025)
-  const powerAutomateUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4a945c5c8122474aad94cc01b9413e71/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=A5uwQizj2hcACdK6ACwxgQaOcFUb9t4xco3Ifyzukrk';
+  const powerAutomateUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/6adb5e389c854ed3ab1ffd03a6243ff5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=iWUv8r2CjIGlucoqXTiEXwHuE6zONcLvvnfNVU0nOGw';
   
   // Get DA IMS Token from da-config.txt file
   const daImsToken = await getDATokenFromEnv();
@@ -666,6 +687,25 @@ async function triggerPowerAutomateFlow(prompt, botMessageElement) {
     return;
   }
   
+  // Get Admin Auth Token from da-config.txt file
+  const adminAuthToken = await getAdminAuthTokenFromEnv();
+  
+  if (!adminAuthToken || adminAuthToken === 'your_admin_token_here') {
+    botMessageElement.className = 'bot-msg error';
+    botMessageElement.innerHTML = `
+      <div class="error-message">
+        ⚠️ <strong>Admin Auth Token Required</strong><br>
+        <span class="error-text">Please update da-config.txt with your Admin Auth Token.</span><br>
+        <span class="retry-text">
+          1. Login to <a href="https://admin.hlx.page" target="_blank">admin.hlx.page</a><br>
+          2. Get your auth token from browser<br>
+          3. Update ADMIN_AUTH_TOKEN in da-config.txt
+        </span>
+      </div>
+    `;
+    return;
+  }
+  
   // Get current page path to determine target Word document
   const currentPath = window.location.pathname;
   const currentHost = window.location.host;
@@ -678,7 +718,9 @@ async function triggerPowerAutomateFlow(prompt, botMessageElement) {
     currentHost: currentHost,
     fullUrl: window.location.href,
     // DA IMS Token for Document Authoring API
-    daImsToken: daImsToken
+    daImsToken: daImsToken,
+    // Admin Auth Token for x-auth-token header
+    adminAuthToken: adminAuthToken
   };
   
   try {

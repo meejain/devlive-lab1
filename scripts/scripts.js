@@ -50,8 +50,22 @@ export async function processImageLinks(container, options = {}) {
     }
 
     // Get AI images for the specified type
-    if (imageType && placeholders && placeholders[imageType]) {
-      aiImages = placeholders[imageType];
+    // Try both singular and plural versions (e.g., 'column' and 'columns')
+    if (imageType && placeholders) {
+      if (placeholders[imageType]) {
+        aiImages = placeholders[imageType];
+      } else {
+        // Try plural version (add 's' if not present)
+        const pluralType = imageType.endsWith('s') ? imageType : `${imageType}s`;
+        // Try singular version (remove 's' if present)
+        const singularType = imageType.endsWith('s') ? imageType.slice(0, -1) : imageType;
+        
+        if (placeholders[pluralType]) {
+          aiImages = placeholders[pluralType];
+        } else if (placeholders[singularType]) {
+          aiImages = placeholders[singularType];
+        }
+      }
     }
   } catch (error) {
     console.log('processImageLinks - failed to load placeholders:', error);
