@@ -139,12 +139,15 @@ async function testAppendRow() {
       sheetMetadata = {
         ':type': sheet[':type'] || 'sheet',
         ':sheetname': sheet[':sheetname'] || 'data',
-        ':colWidths': sheet[':colWidths'] || []
+        ':colWidths': sheet[':colWidths'] || [],
+        ':columns': sheet[':columns'] || []  // Preserve column names if available
       };
       
       console.log('   ✅ Current rows:', currentData.length);
       if (currentData.length > 0) {
         console.log('   Columns:', Object.keys(currentData[0] || {}).join(', '));
+      } else if (sheetMetadata[':columns'] && sheetMetadata[':columns'].length > 0) {
+        console.log('   Columns (from metadata):', sheetMetadata[':columns'].join(', '));
       }
       console.log('   Metadata preserved:', Object.keys(sheetMetadata).join(', '));
     } else {
@@ -172,15 +175,21 @@ async function testAppendRow() {
     console.log('   Removed ' + removedCount + ' empty row(s)');
   }
   
-  // Get column structure from first row or create default
+  // Get column structure from first row, preserved columns metadata, or use default
   let columnKeys = [];
   if (cleanedData.length > 0) {
     columnKeys = Object.keys(cleanedData[0]);
+    console.log('   Columns from existing data:', columnKeys.join(', '));
+  } else if (sheetMetadata[':columns'] && sheetMetadata[':columns'].length > 0) {
+    // Use preserved column names from reset or previous state
+    columnKeys = sheetMetadata[':columns'];
+    console.log('   Columns from preserved metadata:', columnKeys.join(', '));
   } else {
-    // Default columns if sheet is empty
+    // Default columns if sheet is empty and no metadata
     columnKeys = ['Timestamp', 'Prompt', 'Status', 'DocumentPath', 'TargetFolder', 
                   'SharePointFile', 'SharePointPath', 'ImageURL', 'EDSURL', 
                   'AEMPreviewURL', 'Source', 'UserHost', 'GeneratedText'];
+    console.log('   Using default columns');
   }
   
   // Update colWidths if needed
@@ -270,7 +279,8 @@ async function testAppendRow() {
     limit: updatedData.length,
     offset: 0,
     data: updatedData,
-    ...sheetMetadata  // Include preserved metadata (:type, :sheetname, :colWidths)
+    ...sheetMetadata,  // Include preserved metadata (:type, :sheetname, :colWidths, :columns)
+    ':columns': columnKeys  // Update with current column structure
   };
   
   const jsonContent = JSON.stringify(sheetObject);
@@ -325,6 +335,223 @@ async function testAppendRow() {
   console.log('\n🔍 Check sheet at: https://da.live/sheet#/meejain/devlive-lab1/ai-image-generation-log');
 }
 
+/**
+ * Reset DA Sheet - Remove all rows (equivalent to SharePoint reset flow)
+ * Steps:
+ * 1. Get_Current_Sheet (fetch from DA)
+ * 2. Parse_Sheet_Data (extract metadata)
+ * 3. Clear all data rows
+ * 4. Upload_Sheet_To_DA (with empty data)
+ * 5. Wait_for_Excel_Sync (delay)
+ * 6. Clear_Cache
+ * 7. Trigger_JSON_Preview
+ * 8. Trigger_JSON_Publish
+ */
+async function resetDASheet() {
+  console.log('\n🔄 RESET DA SHEET - Remove All Rows\n');
+  console.log('=' .repeat(60));
+  
+  const daToken = getToken();
+  if (!daToken) {
+    console.error('❌ No token found');
+    return false;
+  }
+  console.log('✅ Token loaded');
+
+  // Step 1: Get_Current_Sheet
+  console.log('\n📥 Step 1: Get_Current_Sheet');
+  console.log('   Fetching current sheet data from DA...');
+  
+  const sourceUrl = `https://admin.da.live/source/meejain/devlive-lab1/ai-image-generation-log.json`;
+  
+  let currentData = [];
+  let sheetMetadata = {};
+  let rowsBeforeReset = 0;
+  let dataRowsRemoved = 0;
+  
+  try {
+    const resp = await fetch(sourceUrl, {
+      headers: {
+        'Authorization': `Bearer ${daToken}`,
+      }
+    });
+    
+    if (resp.ok) {
+      const sheet = await resp.json();
+      currentData = sheet.data || [];
+      rowsBeforeReset = currentData.length;
+      
+      // Step 2: Parse_Sheet_Data - Preserve metadata
+      console.log('\n📋 Step 2: Parse_Sheet_Data');
+      sheetMetadata = {
+        ':type': sheet[':type'] || 'sheet',
+        ':sheetname': sheet[':sheetname'] || 'data',
+        ':colWidths': sheet[':colWidths'] || []
+      };
+      
+      console.log('   ✅ Current rows found:', rowsBeforeReset);
+      console.log('   Metadata preserved:', Object.keys(sheetMetadata).join(', '));
+      
+      if (rowsBeforeReset > 0) {
+        console.log('\n   📊 Rows to be deleted:');
+        currentData.slice(0, 3).forEach((row, idx) => {
+          console.log(`      Row ${idx + 1}: ${row.Timestamp || '(empty)'} | ${row.Prompt?.substring(0, 30) || '(empty)'}...`);
+        });
+        if (currentData.length > 3) {
+          console.log(`      ... and ${currentData.length - 3} more rows`);
+        }
+      }
+    } else {
+      console.log('   ⚠️  Failed to fetch:', resp.status, resp.statusText);
+      console.log('   Sheet might not exist yet');
+      return false;
+    }
+  } catch (e) {
+    console.error('   ❌ Error fetching sheet:', e.message);
+    return false;
+  }
+
+  // Step 3: Keep column structure with ONE empty row (preserves headers)
+  console.log('\n🧹 Step 3: Clear_Data_Rows (Keep Empty Template)');
+  
+  let emptyTemplateRow = null;
+  dataRowsRemoved = currentData.length;
+  
+  if (currentData.length > 0) {
+    // Get column names from first row
+    const columnNames = Object.keys(currentData[0]);
+    
+    // Create a row with all empty strings to preserve column structure
+    emptyTemplateRow = {};
+    columnNames.forEach(col => {
+      emptyTemplateRow[col] = '';  // Empty string for all columns
+    });
+    
+    console.log('   Column headers preserved:', columnNames.join(', '));
+    console.log('   Removing all data rows:', dataRowsRemoved);
+    console.log('   Creating 1 empty template row to preserve column structure');
+  } else {
+    console.log('   Sheet is already empty');
+  }
+  
+  // Create data array with ONE empty row to preserve column structure
+  const resetData = emptyTemplateRow ? [emptyTemplateRow] : [];
+  
+  // Step 4: Build_Sheet_Object with empty template row
+  console.log('\n📦 Step 4: Build_Sheet_Object');
+  const sheetObject = {
+    total: resetData.length,
+    limit: resetData.length,
+    offset: 0,
+    data: resetData,
+    ...sheetMetadata
+  };
+  
+  console.log('   Sheet object created with 1 empty template row');
+  console.log('   Total rows:', sheetObject.data.length, '(headers visible, values empty)');
+  console.log('   Metadata preserved:', Object.keys(sheetMetadata).join(', '));
+
+  // Step 5: Upload_Sheet_To_DA
+  console.log('\n📤 Step 5: Upload_Sheet_To_DA');
+  
+  const jsonContent = JSON.stringify(sheetObject);
+  const blob = new Blob([jsonContent], { type: 'application/json' });
+  const formData = new FormData();
+  formData.append('data', blob, 'ai-image-generation-log.json');
+  
+  const uploadUrl = 'https://admin.da.live/source/meejain/devlive-lab1/ai-image-generation-log.json';
+  
+  try {
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${daToken}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      console.log('   ❌ Upload failed:', response.status, response.statusText);
+      return false;
+    }
+    
+    console.log('   ✅ Sheet reset uploaded successfully');
+  } catch (e) {
+    console.error('   ❌ Error uploading:', e.message);
+    return false;
+  }
+
+  // Step 6: Wait_for_Excel_Sync (delay to allow DA to process)
+  console.log('\n⏳ Step 6: Wait_for_Excel_Sync');
+  const syncDelay = 2000; // 2 seconds
+  console.log(`   Waiting ${syncDelay}ms for DA to sync...`);
+  await new Promise(resolve => setTimeout(resolve, syncDelay));
+  console.log('   ✅ Sync wait complete');
+
+  // Step 7: Clear_Cache
+  console.log('\n🗑️  Step 7: Clear_Cache');
+  try {
+    // Clear cache by calling the .plain.html endpoint
+    const cacheUrl = 'https://main--devlive-lab1--meejain.aem.page/ai-image-generation-log.json?bustcache=' + Date.now();
+    await fetch(cacheUrl, { 
+      method: 'GET',
+      cache: 'no-store'
+    });
+    console.log('   ✅ Cache cleared');
+  } catch (e) {
+    console.log('   ⚠️  Cache clear warning:', e.message);
+  }
+
+  // Step 8: Trigger_JSON_Preview
+  console.log('\n🔍 Step 8: Trigger_JSON_Preview');
+  try {
+    const previewUrl = 'https://main--devlive-lab1--meejain.aem.page/ai-image-generation-log.json';
+    const previewResp = await fetch(previewUrl, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    });
+    console.log('   ✅ Preview triggered:', previewResp.status);
+    console.log('   Preview URL:', previewUrl);
+  } catch (e) {
+    console.log('   ⚠️  Preview trigger warning:', e.message);
+  }
+
+  // Step 9: Trigger_JSON_Publish
+  console.log('\n🚀 Step 9: Trigger_JSON_Publish');
+  try {
+    const publishUrl = 'https://main--devlive-lab1--meejain.aem.live/ai-image-generation-log.json';
+    const publishResp = await fetch(publishUrl, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    });
+    console.log('   ✅ Publish triggered:', publishResp.status);
+    console.log('   Publish URL:', publishUrl);
+  } catch (e) {
+    console.log('   ⚠️  Publish trigger warning:', e.message);
+  }
+
+  // Final Summary
+  console.log('\n' + '='.repeat(60));
+  console.log('✅ RESET COMPLETE!');
+  console.log('=' .repeat(60));
+  console.log('📊 SUMMARY:');
+  console.log('   Rows before reset:', rowsBeforeReset);
+  console.log('   Rows after reset: 1 (empty template row)');
+  console.log('   Data rows deleted:', dataRowsRemoved);
+  console.log('   Column headers: PRESERVED ✓');
+  console.log('   All values: Empty (ready for new data)');
+  console.log('=' .repeat(60));
+  console.log('\n🔍 Verify at: https://da.live/sheet#/meejain/devlive-lab1/ai-image-generation-log');
+  
+  return true;
+}
+
 // Main execution
 async function main() {
   const args = process.argv.slice(2);
@@ -336,10 +563,14 @@ async function main() {
   } else if (command === 'append') {
     // Append new row to existing sheet
     await testAppendRow();
+  } else if (command === 'reset') {
+    // Reset sheet - remove all rows
+    await resetDASheet();
   } else {
     console.log('\n📖 Usage:');
     console.log('  node test-da-sheet.js init    - Initialize sheet with sample data');
     console.log('  node test-da-sheet.js append  - Append new row to existing sheet');
+    console.log('  node test-da-sheet.js reset   - Reset sheet (remove all rows)');
     console.log('\n💡 Running APPEND test by default...\n');
     await testAppendRow();
   }

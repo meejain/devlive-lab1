@@ -970,19 +970,59 @@ async function triggerIndexUpdateFlow(botMessageElement) {
   }
 }
 
-// Function to trigger Excel reset flow
+// Function to trigger Excel/DA reset flow
 async function triggerResetFlow(botMessageElement) {
-  // URL for the third Power Automate flow (Excel Reset)
-  const resetFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/11bcc84180f8475285c355593f8fe46e/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=Daa49-YsFWJ5y0LMFD27QoCOjLug-4vVzDwGunSoB64';
+  // URL for the DA Reset Flow
+  const resetFlowUrl = 'https://defaultfa7b1b5a7b34438794aed2c178dece.e1.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/adaa0bd4307e4d50b0e4b06497c2cdbd/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=r4e24KD9ktF5ib1fabYSgmHCYaHQs1cm1XMCO3-apCM';
+  
+  // Get DA IMS Token from da-config.txt file
+  const daImsToken = await getDATokenFromEnv();
+  
+  if (!daImsToken || daImsToken === 'your_token_here') {
+    botMessageElement.className = 'bot-msg error';
+    botMessageElement.innerHTML = `
+      <div class="error-message">
+        ⚠️ <strong>DA IMS Token Required</strong><br>
+        <span class="error-text">Please update da-config.txt with your DA IMS Token.</span><br>
+        <span class="retry-text">
+          1. Login to <a href="https://da.live" target="_blank">da.live</a><br>
+          2. Open browser console and run: <code>copy(adobeIMS.getAccessToken().token)</code><br>
+          3. Update DA_IMS_TOKEN in da-config.txt
+        </span>
+      </div>
+    `;
+    return;
+  }
+  
+  // Get Admin Auth Token from da-config.txt file
+  const adminAuthToken = await getAdminAuthTokenFromEnv();
+  
+  if (!adminAuthToken || adminAuthToken === 'your_admin_token_here') {
+    botMessageElement.className = 'bot-msg error';
+    botMessageElement.innerHTML = `
+      <div class="error-message">
+        ⚠️ <strong>Admin Auth Token Required</strong><br>
+        <span class="error-text">Please update da-config.txt with your Admin Auth Token.</span><br>
+        <span class="retry-text">
+          1. Login to <a href="https://admin.hlx.page" target="_blank">admin.hlx.page</a><br>
+          2. Get your auth token from browser<br>
+          3. Update ADMIN_AUTH_TOKEN in da-config.txt
+        </span>
+      </div>
+    `;
+    return;
+  }
   
   const requestBody = {
-    trigger: 'excel-reset',
+    daImsToken: daImsToken,
+    adminAuthToken: adminAuthToken,
+    trigger: 'da-reset',
     timestamp: new Date().toISOString(),
     source: 'user-request'
   };
   
   try {
-    console.log('🗑️ Triggering Excel reset flow...');
+    console.log('🗑️ Triggering DA sheet reset flow...');
     
     const response = await fetch(resetFlowUrl, {
       method: 'POST',
@@ -1003,9 +1043,10 @@ async function triggerResetFlow(botMessageElement) {
       botMessageElement.className = 'bot-msg success';
       botMessageElement.innerHTML = `
         <div class="success-message">
-          ✅ <strong>Excel Reset Completed!</strong><br>
-          <span class="status-text">All data has been cleared from the Excel sheet.</span><br>
-          <span class="status-text">Type "update index" to refresh the <a href="https://main--mitch-lab--meejain.aem.page/ai-image-generation-log.json" target="_blank" style="color: #4CAF50; text-decoration: underline;">JSON API</a></span>
+          ✅ <strong>DA Sheet Reset Completed!</strong><br>
+          <span class="status-text">All data has been cleared from the DA sheet.</span><br>
+          <span class="status-text">Only the header row with empty values remains.</span><br>
+          <span class="status-text">Type "update index" to refresh the <a href="https://main--devlive-lab1--meejain.aem.page/ai-image-generation-log.json" target="_blank" style="color: #4CAF50; text-decoration: underline;">JSON API</a></span>
         </div>
       `;
     } else {
@@ -1017,7 +1058,7 @@ async function triggerResetFlow(botMessageElement) {
       botMessageElement.innerHTML = `
         <div class="error-message">
           ❌ <strong>Reset Failed</strong><br>
-          <span class="error-text">Unable to reset Excel sheet. Error: ${response.status}</span><br>
+          <span class="error-text">Unable to reset DA sheet. Error: ${response.status}</span><br>
           <span class="retry-text">Please try again.</span>
         </div>
       `;
